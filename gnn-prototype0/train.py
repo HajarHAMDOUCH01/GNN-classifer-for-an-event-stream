@@ -1,12 +1,11 @@
 """
-Training Script for GNN-based Online Conformance Checking
+Training Script for GNN-based Online Conformance Checking - CORRECTED
 
-This module implements:
-1. Dataset loading and batching
-2. Training loop with validation
-3. Metrics computation (accuracy, precision, recall, F1)
-4. Model checkpointing
-5. Visualization of training progress
+Key corrections:
+1. Uses the two-stage model architecture
+2. Properly handles enabled transitions in loss computation
+3. Tracks enablement violation metrics
+4. Updated forward pass to handle three outputs instead of two
 """
 
 import sys 
@@ -23,7 +22,7 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc
 import os
 import json
 
-from gnn_model import ConformanceGNN, ConformanceLoss, count_parameters
+from gnn_model_corrected import ConformanceGNN, ConformanceLoss, count_parameters
 from generate_dataset import ConformanceDatasetGenerator
 
 
@@ -70,7 +69,7 @@ def collate_fn(batch: List[Dict]) -> Dict:
 
 
 class MetricsTracker:
-    """Track and compute metrics during training"""
+    """Track and compute metrics during training - CORRECTED"""
     
     def __init__(self):
         self.reset()
@@ -80,16 +79,25 @@ class MetricsTracker:
         self.transition_labels = []
         self.conformance_preds = []
         self.conformance_labels = []
+        self.enabled_transitions = []
         self.losses = []
+        self.transition_losses = []
+        self.conformance_losses = []
+        self.enablement_losses = []
     
     def update(self, pred_transitions, true_transitions, 
-               pred_conformance, true_conformance, loss):
+               pred_conformance, true_conformance, 
+               enabled_trans, loss, trans_loss, conf_loss, enable_loss):
         """Update with batch predictions"""
         self.transition_preds.append(pred_transitions.detach().cpu())
         self.transition_labels.append(true_transitions.detach().cpu())
         self.conformance_preds.append(pred_conformance.detach().cpu())
         self.conformance_labels.append(true_conformance.detach().cpu())
+        self.enabled_transitions.append(enabled_trans.detach().cpu())
         self.losses.append(loss.item())
+        self.transition_losses.append(trans_loss.item())
+        self.conformance_losses.append(conf_loss.item())
+        self.enablement_losses.append(enable_loss.item())
     
     def compute(self, threshold: float = 0.5) -> Dict:
         """Compute metrics"""
@@ -98,6 +106,7 @@ class MetricsTracker:
         trans_labels = torch.cat(self.transition_labels, dim=0).numpy()
         conf_preds = torch.cat(self.conformance_preds, dim=0).numpy()
         conf_labels = torch.cat(self.conformance_labels, dim=0).numpy()
+        enabled = torch.cat(self.enabled_transitions, dim=0).numpy()
         
         # Threshold predictions
         trans_preds_binary = (trans_preds > threshold).astype(int)
@@ -118,19 +127,32 @@ class MetricsTracker:
         except:
             conf_auc = 0.0
         
+        # NEW: Enablement violation metrics
+        # How often does the model predict transitions that aren't enabled?
+        violations = (trans_preds > threshold) & (enabled == 0)
+        violation_rate = violations.sum() / (trans_preds.shape[0] * trans_preds.shape[1])
+        
+        # How well does the model respect enablement constraints?
+        enabled_accuracy = ((trans_preds > threshold) == (enabled > 0)).mean()
+        
         return {
             'loss': np.mean(self.losses),
+            'transition_loss': np.mean(self.transition_losses),
+            'conformance_loss': np.mean(self.conformance_losses),
+            'enablement_loss': np.mean(self.enablement_losses),
             'transition_accuracy': trans_accuracy,
             'conformance_accuracy': conf_accuracy,
             'conformance_precision': conf_precision,
             'conformance_recall': conf_recall,
             'conformance_f1': conf_f1,
-            'conformance_auc': conf_auc
+            'conformance_auc': conf_auc,
+            'violation_rate': violation_rate,
+            'enabled_accuracy': enabled_accuracy
         }
 
 
 class Trainer:
-    """Training manager for conformance GNN"""
+    """Training manager for conformance GNN - CORRECTED"""
     
     def __init__(self, 
                  model: nn.Module,
@@ -163,7 +185,7 @@ class Trainer:
         self.best_val_loss = float('inf')
     
     def train_epoch(self) -> Dict:
-        """Train for one epoch"""
+        """Train for one epoch - CORRECTED"""
         self.model.train()
         metrics_tracker = MetricsTracker()
         
@@ -183,7 +205,8 @@ class Trainer:
             total_loss = 0
             
             for i in range(batch_size):
-                pred_trans, pred_conf = self.model(
+                # TWO-STAGE FORWARD PASS
+                pred_trans, pred_conf, enabled = self.model(
                     place_features[i],
                     transition_features[i],
                     prefix_encoding[i],
@@ -191,10 +214,11 @@ class Trainer:
                     post_edge_index
                 )
                 
-                # Compute loss
-                loss, _, _ = self.loss_fn(
+                # Compute loss with enablement checking
+                loss, trans_loss, conf_loss, enable_loss = self.loss_fn(
                     pred_trans, next_transitions[i],
-                    pred_conf, is_conformant[i]
+                    pred_conf, is_conformant[i],
+                    enabled  # IMPORTANT: Pass enabled transitions
                 )
                 
                 total_loss += loss
@@ -203,7 +227,8 @@ class Trainer:
                 metrics_tracker.update(
                     pred_trans.unsqueeze(0), next_transitions[i].unsqueeze(0),
                     pred_conf.unsqueeze(0), is_conformant[i].unsqueeze(0),
-                    loss
+                    enabled.unsqueeze(0),
+                    loss, trans_loss, conf_loss, enable_loss
                 )
             
             # Backward pass
@@ -218,7 +243,7 @@ class Trainer:
         return metrics_tracker.compute()
     
     def validate(self) -> Dict:
-        """Validate the model"""
+        """Validate the model - CORRECTED"""
         self.model.eval()
         metrics_tracker = MetricsTracker()
         
@@ -236,7 +261,8 @@ class Trainer:
                 batch_size = place_features.size(0)
                 
                 for i in range(batch_size):
-                    pred_trans, pred_conf = self.model(
+                    # TWO-STAGE FORWARD PASS
+                    pred_trans, pred_conf, enabled = self.model(
                         place_features[i],
                         transition_features[i],
                         prefix_encoding[i],
@@ -245,16 +271,18 @@ class Trainer:
                     )
                     
                     # Compute loss
-                    loss, _, _ = self.loss_fn(
+                    loss, trans_loss, conf_loss, enable_loss = self.loss_fn(
                         pred_trans, next_transitions[i],
-                        pred_conf, is_conformant[i]
+                        pred_conf, is_conformant[i],
+                        enabled  # IMPORTANT: Pass enabled transitions
                     )
                     
                     # Track metrics
                     metrics_tracker.update(
                         pred_trans.unsqueeze(0), next_transitions[i].unsqueeze(0),
                         pred_conf.unsqueeze(0), is_conformant[i].unsqueeze(0),
-                        loss
+                        enabled.unsqueeze(0),
+                        loss, trans_loss, conf_loss, enable_loss
                     )
         
         return metrics_tracker.compute()
@@ -282,7 +310,7 @@ class Trainer:
     def train(self, num_epochs: int):
         """Full training loop"""
         print("=" * 60)
-        print("Starting Training")
+        print("Starting Training - Two-Stage Conformance GNN")
         print("=" * 60)
         print(f"Device: {self.device}")
         print(f"Model parameters: {count_parameters(self.model):,}")
@@ -307,16 +335,28 @@ class Trainer:
             self.history['val_metrics'].append(val_metrics)
             
             # Print metrics
-            print(f"\nTrain Loss: {train_metrics['loss']:.4f}")
+            print(f"\nTrain Metrics:")
+            print(f"  Total Loss: {train_metrics['loss']:.4f}")
+            print(f"    - Transition Loss: {train_metrics['transition_loss']:.4f}")
+            print(f"    - Conformance Loss: {train_metrics['conformance_loss']:.4f}")
+            print(f"    - Enablement Loss: {train_metrics['enablement_loss']:.4f}")
             print(f"  Transition Acc: {train_metrics['transition_accuracy']:.4f}")
             print(f"  Conformance Acc: {train_metrics['conformance_accuracy']:.4f}")
             print(f"  Conformance F1: {train_metrics['conformance_f1']:.4f}")
+            print(f"  Violation Rate: {train_metrics['violation_rate']:.4f}")
+            print(f"  Enabled Accuracy: {train_metrics['enabled_accuracy']:.4f}")
             
-            print(f"\nVal Loss: {val_metrics['loss']:.4f}")
+            print(f"\nVal Metrics:")
+            print(f"  Total Loss: {val_metrics['loss']:.4f}")
+            print(f"    - Transition Loss: {val_metrics['transition_loss']:.4f}")
+            print(f"    - Conformance Loss: {val_metrics['conformance_loss']:.4f}")
+            print(f"    - Enablement Loss: {val_metrics['enablement_loss']:.4f}")
             print(f"  Transition Acc: {val_metrics['transition_accuracy']:.4f}")
             print(f"  Conformance Acc: {val_metrics['conformance_accuracy']:.4f}")
             print(f"  Conformance F1: {val_metrics['conformance_f1']:.4f}")
             print(f"  Conformance AUC: {val_metrics['conformance_auc']:.4f}")
+            print(f"  Violation Rate: {val_metrics['violation_rate']:.4f}")
+            print(f"  Enabled Accuracy: {val_metrics['enabled_accuracy']:.4f}")
             
             # Save checkpoint
             is_best = val_metrics['loss'] < self.best_val_loss
@@ -330,50 +370,75 @@ class Trainer:
         print("=" * 60)
     
     def plot_history(self, save_path: str = None):
-        """Plot training history"""
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        """Plot training history - ENHANCED"""
+        fig, axes = plt.subplots(3, 2, figsize=(15, 15))
         
         # Loss
         axes[0, 0].plot(self.history['train_loss'], label='Train')
         axes[0, 0].plot(self.history['val_loss'], label='Validation')
         axes[0, 0].set_xlabel('Epoch')
         axes[0, 0].set_ylabel('Loss')
-        axes[0, 0].set_title('Training Loss')
+        axes[0, 0].set_title('Total Training Loss')
         axes[0, 0].legend()
         axes[0, 0].grid(True)
+        
+        # Component losses
+        train_trans_loss = [m['transition_loss'] for m in self.history['train_metrics']]
+        train_conf_loss = [m['conformance_loss'] for m in self.history['train_metrics']]
+        train_enable_loss = [m['enablement_loss'] for m in self.history['train_metrics']]
+        
+        axes[0, 1].plot(train_trans_loss, label='Transition')
+        axes[0, 1].plot(train_conf_loss, label='Conformance')
+        axes[0, 1].plot(train_enable_loss, label='Enablement')
+        axes[0, 1].set_xlabel('Epoch')
+        axes[0, 1].set_ylabel('Loss')
+        axes[0, 1].set_title('Training Loss Components')
+        axes[0, 1].legend()
+        axes[0, 1].grid(True)
         
         # Transition accuracy
         train_trans_acc = [m['transition_accuracy'] for m in self.history['train_metrics']]
         val_trans_acc = [m['transition_accuracy'] for m in self.history['val_metrics']]
-        axes[0, 1].plot(train_trans_acc, label='Train')
-        axes[0, 1].plot(val_trans_acc, label='Validation')
-        axes[0, 1].set_xlabel('Epoch')
-        axes[0, 1].set_ylabel('Accuracy')
-        axes[0, 1].set_title('Transition Prediction Accuracy')
-        axes[0, 1].legend()
-        axes[0, 1].grid(True)
+        axes[1, 0].plot(train_trans_acc, label='Train')
+        axes[1, 0].plot(val_trans_acc, label='Validation')
+        axes[1, 0].set_xlabel('Epoch')
+        axes[1, 0].set_ylabel('Accuracy')
+        axes[1, 0].set_title('Transition Prediction Accuracy')
+        axes[1, 0].legend()
+        axes[1, 0].grid(True)
         
         # Conformance accuracy
         train_conf_acc = [m['conformance_accuracy'] for m in self.history['train_metrics']]
         val_conf_acc = [m['conformance_accuracy'] for m in self.history['val_metrics']]
-        axes[1, 0].plot(train_conf_acc, label='Train')
-        axes[1, 0].plot(val_conf_acc, label='Validation')
-        axes[1, 0].set_xlabel('Epoch')
-        axes[1, 0].set_ylabel('Accuracy')
-        axes[1, 0].set_title('Conformance Classification Accuracy')
-        axes[1, 0].legend()
-        axes[1, 0].grid(True)
+        axes[1, 1].plot(train_conf_acc, label='Train')
+        axes[1, 1].plot(val_conf_acc, label='Validation')
+        axes[1, 1].set_xlabel('Epoch')
+        axes[1, 1].set_ylabel('Accuracy')
+        axes[1, 1].set_title('Conformance Classification Accuracy')
+        axes[1, 1].legend()
+        axes[1, 1].grid(True)
         
         # F1 score
         train_f1 = [m['conformance_f1'] for m in self.history['train_metrics']]
         val_f1 = [m['conformance_f1'] for m in self.history['val_metrics']]
-        axes[1, 1].plot(train_f1, label='Train')
-        axes[1, 1].plot(val_f1, label='Validation')
-        axes[1, 1].set_xlabel('Epoch')
-        axes[1, 1].set_ylabel('F1 Score')
-        axes[1, 1].set_title('Conformance F1 Score')
-        axes[1, 1].legend()
-        axes[1, 1].grid(True)
+        axes[2, 0].plot(train_f1, label='Train')
+        axes[2, 0].plot(val_f1, label='Validation')
+        axes[2, 0].set_xlabel('Epoch')
+        axes[2, 0].set_ylabel('F1 Score')
+        axes[2, 0].set_title('Conformance F1 Score')
+        axes[2, 0].legend()
+        axes[2, 0].grid(True)
+        
+        # NEW: Violation rate
+        train_viol = [m['violation_rate'] for m in self.history['train_metrics']]
+        val_viol = [m['violation_rate'] for m in self.history['val_metrics']]
+        axes[2, 1].plot(train_viol, label='Train')
+        axes[2, 1].plot(val_viol, label='Validation')
+        axes[2, 1].set_xlabel('Epoch')
+        axes[2, 1].set_ylabel('Violation Rate')
+        axes[2, 1].set_title('Enablement Violation Rate')
+        axes[2, 1].legend()
+        axes[2, 1].grid(True)
         
         plt.tight_layout()
         
@@ -399,7 +464,11 @@ def main():
         'learning_rate': 0.001,
         'num_epochs': 50,
         'train_split': 0.8,
-        'device': 'cuda' if torch.cuda.is_available() else 'cpu'
+        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+        # Loss weights
+        'transition_weight': 1.0,
+        'conformance_weight': 1.0,
+        'enablement_penalty': 0.5  # NEW: penalty for predicting disabled transitions
     }
     
     print("Configuration:")
@@ -462,7 +531,11 @@ def main():
     
     # Optimizer and loss
     optimizer = torch.optim.Adam(model.parameters(), lr=config['learning_rate'])
-    loss_fn = ConformanceLoss(transition_weight=1.0, conformance_weight=1.0)
+    loss_fn = ConformanceLoss(
+        transition_weight=config['transition_weight'],
+        conformance_weight=config['conformance_weight'],
+        enablement_penalty=config['enablement_penalty']
+    )
     
     # Create trainer
     trainer = Trainer(
@@ -472,7 +545,7 @@ def main():
         optimizer=optimizer,
         loss_fn=loss_fn,
         device=config['device'],
-        checkpoint_dir='kaggle/wokring/checkpoints'
+        checkpoint_dir='/kaggle/working/checkpoints'
     )
     
     # Train
@@ -482,10 +555,12 @@ def main():
     trainer.plot_history(save_path='/kaggle/working/training_history.png')
     
     # Save config
-    with open('checkpoints/config.json', 'w') as f:
+    config_path = '/kaggle/working/checkpoints/config.json'
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, 'w') as f:
         json.dump(config, f, indent=2)
     
-    print("\nTraining complete! Best model saved to ./checkpoints/best_model.pt")
+    print("\nTraining complete! Best model saved to /kaggle/working/checkpoints/best_model.pt")
 
 
 if __name__ == '__main__':
