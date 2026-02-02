@@ -9,8 +9,20 @@ from typing import List, Tuple
 from collections import defaultdict
 
 # Transitions with activity labels
+# NOTE: The Petri net has 8 transitions total:
+# - t1(a), t2(b), t3(c), t4(d), t5(d), t6(τ), t7(e), t8(f)
 TRANSITIONS = ['a', 'b', 'c', 'd', 'e', 'f']
 T_MAP = {label: i for i, label in enumerate(TRANSITIONS)}
+
+# Transition structure (for reference):
+# t1(a): pi → p1, p2
+# t2(b): p1 → p3
+# t3(c): p2 → p4
+# t4(d): p1, p4 → p5 (first variant)
+# t5(d): p3, p4 → p5 (second variant)
+# t6(τ): p5 → p1, p2 (silent loop)
+# t7(e): p5 → po
+# t8(f): p5 → po
 
 
 class N1Simulator:
@@ -194,7 +206,7 @@ def generate_online_conformance_dataset(
             if success:
                 marking = new_marking
             # If event is non-conformant, marking stays the same
-            # this is just a classifier , (in practice, the system might handle this differently)
+            # (in practice, the system might handle this differently)
     
     # Balance dataset if requested
     if balance_dataset:
@@ -349,7 +361,7 @@ def save_dataset_polars_compact(samples: List[Tuple[List[int], str, int]], filep
     try:
         import polars as pl
     except ImportError:
-        print("Polars not installed. Install with: pip install polars")
+        print("Polars not installed.")
         return None
     
     # Convert to list format

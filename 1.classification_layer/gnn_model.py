@@ -1,6 +1,7 @@
 """
 GNN Model for Online Conformance Checking
 Predicts whether an incoming event is conformant given current marking
+FIXED: Now correctly handles 8 transitions including τ and two 'd' variants
 """
 
 import torch
@@ -18,6 +19,11 @@ def build_n1_petri_net_structure():
     Places: pi, p1, p2, p3, p4, p5, po (indices 0-6)
     Transitions: t1(a), t2(b), t3(c), t4(d), t5(d), t6(τ), t7(e), t8(f) (indices 0-7)
     
+    NOTE: We have 8 transitions total:
+    - 6 visible activities: a, b, c, d, e, f
+    - 1 silent transition: τ (tau)
+    - Activity 'd' appears in 2 transitions: t4 and t5
+    
     Returns edge_index for pre and post arcs
     """
     # Pre-arcs: (place, pre, transition)
@@ -33,7 +39,7 @@ def build_n1_petri_net_structure():
         [1, 3], [4, 3],
         # t5(d): p3 + p4 -> t5 (second variant of d)
         [3, 4], [4, 4],
-        # t6(τ): p5 -> t6 (silent transition)
+        # t6(τ): p5 -> t6 (silent transition - loop back)
         [5, 5],
         # t7(e): p5 -> t7
         [5, 6],
@@ -54,8 +60,8 @@ def build_n1_petri_net_structure():
         [3, 5],
         # t5 -> p5
         [4, 5],
-        # t6 -> (loop back - structure depends on full model)
-        [5, 1], [5, 2],  # simplified
+        # t6 -> p1, p2 (loop back - allows re-examination)
+        [5, 1], [5, 2],
         # t7 -> po
         [6, 6],
         # t8 -> po
@@ -79,18 +85,38 @@ def create_hetero_data_from_sample(marking, event, label, transition_labels=['a'
     
     Returns:
         HeteroData object
+    
+    We have 8 transitions but only 6 visible activity labels.
+    We handle this by marking BOTH 'd' transitions (t4 and t5) when event is 'd',
+    since we don't know which variant will fire without checking the marking.
+    The GNN will learn which one is actually enabled based on the marking.
     """
     data = HeteroData()
     
     # Place node features: token counts (current marking)
-    data['place'].x = torch.tensor(marking, dtype=torch.float).unsqueeze(1)  # [7, 1] state of a current marking
+    data['place'].x = torch.tensor(marking, dtype=torch.float).unsqueeze(1)  # [7, 1]
     
-    # Transition node features: one-hot encoding of incoming event
-    num_transitions = len(transition_labels)
-    event_idx = transition_labels.index(event) # an event occured
-    transition_features = torch.zeros((num_transitions, 1), dtype=torch.float)
-    transition_features[event_idx] = 1.0  # Mark the incoming transition
-    data['transition'].x = transition_features  # [6, 1]
+    # Transition node features: 8 transitions
+    # [t1(a), t2(b), t3(c), t4(d), t5(d), t6(τ), t7(e), t8(f)]
+    transition_features = torch.zeros((8, 1), dtype=torch.float)
+    
+    # Map activity label to transition index/indices
+    activity_to_transitions = {
+        'a': [0],      # t1
+        'b': [1],      # t2
+        'c': [2],      # t3
+        'd': [3, 4],   # t4 AND t5 (both variants of d)
+        'e': [6],      # t7
+        'f': [7],      # t8
+        # Note: t6 (τ) is never marked directly as it's silent
+    }
+    
+    # Mark the transition(s) corresponding to the incoming event
+    if event in activity_to_transitions:
+        for t_idx in activity_to_transitions[event]:
+            transition_features[t_idx] = 1.0
+    
+    data['transition'].x = transition_features  # [8, 1]
     
     # Add Petri net structure (static)
     pre_edges, post_edges = build_n1_petri_net_structure()
@@ -114,11 +140,12 @@ class ConformanceGNN(nn.Module):
     4. Binary classification: conformant vs non-conformant
     """
     
-    def __init__(self, hidden_dim=64, num_layers=2):
+    def __init__(self, hidden_dim=64, num_layers=2, num_transitions=8):
         super(ConformanceGNN, self).__init__()
         
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
+        self.num_transitions = num_transitions
         
         # Input projections
         self.place_proj = nn.Linear(1, hidden_dim)  # marking value -> hidden
@@ -148,8 +175,8 @@ class ConformanceGNN(nn.Module):
         
         Args:
             data: HeteroData with:
-                - data['place'].x: [num_places, 1] marking
-                - data['transition'].x: [num_transitions, 1] incoming event
+                - data['place'].x: [num_places, 1] marking (7 places)
+                - data['transition'].x: [num_transitions, 1] incoming event (8 transitions)
                 - edges: Petri net structure
         
         Returns:
@@ -158,7 +185,7 @@ class ConformanceGNN(nn.Module):
         # Project to hidden dimension
         x_dict = {
             'place': self.place_proj(data['place'].x),  # [7, hidden_dim]
-            'transition': self.transition_proj(data['transition'].x)  # [6, hidden_dim]
+            'transition': self.transition_proj(data['transition'].x)  # [8, hidden_dim]
         }
         
         # Message passing
