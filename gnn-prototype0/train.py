@@ -22,7 +22,7 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc
 import os
 import json
 
-from gnn_model_corrected import ConformanceGNN, ConformanceLoss, count_parameters
+from gnn_model import ConformanceGNN, ConformanceLoss, count_parameters
 from generate_dataset import ConformanceDatasetGenerator
 
 
