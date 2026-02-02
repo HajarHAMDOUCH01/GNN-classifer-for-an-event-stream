@@ -33,9 +33,8 @@ class HeteroGraphConv(nn.Module):
         self.trans_to_place_msg = nn.Linear(transition_dim, hidden_dim)
         
         # Update functions
-        self.place_update = nn.Linear(hidden_dim*2, hidden_dim)
-        self.trans_update = nn.Linear(hidden_dim*2, hidden_dim)
-
+        self.place_update = nn.Linear(place_dim + hidden_dim, place_dim)
+        self.trans_update = nn.Linear(transition_dim + hidden_dim, transition_dim)
         
         # Attention weights
         self.place_attention = nn.Linear(hidden_dim, 1)
