@@ -495,10 +495,10 @@ if __name__ == "__main__":
     print("-" * 80)
     
     # Save balanced dataset (recommended for training)
-    save_dataset_polars(balanced_samples, "conformance_balanced.parquet")
+    save_dataset_polars(balanced_samples, "/kaggle/working/conformance_balanced.parquet")
     
     # Save full unbalanced dataset
-    save_dataset_polars(all_samples, "conformance_full.parquet")
+    save_dataset_polars(all_samples, "/kaggle/working/conformance_full.parquet")
     
     # Save compact version (with marking as list column)
     save_dataset_polars_compact(balanced_samples, "conformance_balanced_compact.parquet")
@@ -506,7 +506,7 @@ if __name__ == "__main__":
     # Test loading
     print("\n8. Testing dataset loading:")
     print("-" * 80)
-    loaded_samples = load_dataset_polars("conformance_balanced.parquet")
+    loaded_samples = load_dataset_polars("/kaggle/working/conformance_balanced.parquet")
     print(f"Successfully loaded {len(loaded_samples)} samples")
     print(f"First sample: {loaded_samples[0]}")
     
