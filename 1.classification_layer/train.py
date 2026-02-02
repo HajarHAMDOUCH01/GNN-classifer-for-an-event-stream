@@ -261,7 +261,7 @@ def main():
         'batch_size': 1,  # HeteroData doesn't batch well, use 1
         'learning_rate': 0.001,
         'num_epochs': 100,
-        'patience': 15,  # Early stopping patience
+        'patience': 5,  # Early stopping patience
         
         # Device
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
