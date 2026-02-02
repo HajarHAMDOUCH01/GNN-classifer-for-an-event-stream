@@ -425,7 +425,7 @@ if __name__ == "__main__":
     print("-" * 80)
     conforming_samples = generate_online_conformance_dataset(
         simulator,
-        num_traces=1000,
+        num_traces=1500,
         noise_type=None,
         balance_dataset=False
     )
@@ -438,19 +438,44 @@ if __name__ == "__main__":
     # Generate dataset with noise
     print("\n2. NOISY traces (30% remove noise):")
     print("-" * 80)
-    noisy_samples = generate_online_conformance_dataset(
+    noisy_samples_remove = generate_online_conformance_dataset(
         simulator,
-        num_traces=1000,
+        num_traces=500,
         noise_type='remove',
-        noise_level=0.3,
+        noise_level=0.9,
         balance_dataset=False
     )
-    
-    conf_count = sum(1 for _, _, label in noisy_samples if label == 0)
-    non_conf_count = len(noisy_samples) - conf_count
-    print(f"Total samples: {len(noisy_samples)}")
-    print(f"Conformant: {conf_count} ({100*conf_count/len(noisy_samples):.1f}%)")
-    print(f"Non-conformant: {non_conf_count} ({100*non_conf_count/len(noisy_samples):.1f}%)")
+    noisy_samples_add = generate_online_conformance_dataset(
+        simulator,
+        num_traces=500,
+        noise_type='add',
+        noise_level=0.9,
+        balance_dataset=False
+    )
+    noisy_samples_swap = generate_online_conformance_dataset(
+        simulator,
+        num_traces=500,
+        noise_type='swap',
+        noise_level=0.9,
+        balance_dataset=False
+    )
+    conf_count = sum(1 for _, _, label in noisy_samples_remove if label == 0)
+    non_conf_count = len(noisy_samples_remove) - conf_count
+    print(f"Total samples: {len(noisy_samples_remove)}")
+    print(f"Conformant: {conf_count} ({100*conf_count/len(noisy_samples_remove):.1f}%)")
+    print(f"Non-conformant: {non_conf_count} ({100*non_conf_count/len(noisy_samples_remove):.1f}%)")
+
+    conf_count = sum(1 for _, _, label in noisy_samples_add if label == 0)
+    non_conf_count = len(noisy_samples_add) - conf_count
+    print(f"Total samples: {len(noisy_samples_add)}")
+    print(f"Conformant: {conf_count} ({100*conf_count/len(noisy_samples_add):.1f}%)")
+    print(f"Non-conformant: {non_conf_count} ({100*non_conf_count/len(noisy_samples_add):.1f}%)")
+
+    conf_count = sum(1 for _, _, label in noisy_samples_swap if label == 0)
+    non_conf_count = len(noisy_samples_swap) - conf_count
+    print(f"Total samples: {len(noisy_samples_swap)}")
+    print(f"Conformant: {conf_count} ({100*conf_count/len(noisy_samples_swap):.1f}%)")
+    print(f"Non-conformant: {non_conf_count} ({100*non_conf_count/len(noisy_samples_swap):.1f}%)")
     
     # Generate additional negative samples
     print("\n3. Additional NEGATIVE samples:")
@@ -461,7 +486,7 @@ if __name__ == "__main__":
     # Combined dataset
     print("\n4. COMBINED dataset:")
     print("-" * 80)
-    all_samples = conforming_samples + noisy_samples + negative_samples
+    all_samples = conforming_samples + noisy_samples_add + noisy_samples_remove + noisy_samples_swap + negative_samples
     conf_count = sum(1 for _, _, label in all_samples if label == 0)
     print(f"Total samples: {len(all_samples)}")
     print(f"Conformant: {conf_count} ({100*conf_count/len(all_samples):.1f}%)")
