@@ -19,30 +19,39 @@ class HeteroGraphConv(nn.Module):
     def __init__(self, place_dim: int, transition_dim: int, hidden_dim: int):
         super(HeteroGraphConv, self).__init__()
         
+        # making the features of places nodes and transitions nodes into embeddings
         self.place_to_trans_msg = nn.Linear(place_dim, hidden_dim)
         self.trans_to_place_msg = nn.Linear(transition_dim, hidden_dim)
+
+        # a place recieves messages and concatenates them with its own features
         self.place_update = nn.Linear(place_dim + hidden_dim, place_dim)
         self.trans_update = nn.Linear(transition_dim + hidden_dim, transition_dim)
+
+        # this layers take a message and output a logit (attn score)
         self.place_attention = nn.Linear(hidden_dim, 1)
         self.trans_attention = nn.Linear(hidden_dim, 1)
     
+    # forward pass takes current features of all places and transitions of the graph
     def forward(self, place_features: torch.Tensor, 
                 transition_features: torch.Tensor,
-                pre_edge_index: torch.Tensor,
-                post_edge_index: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                pre_edge_index: torch.Tensor, # which places connects to which transitions
+                post_edge_index: torch.Tensor # which transitions connects to which places
+                ) -> Tuple[torch.Tensor, torch.Tensor]:
         num_places = place_features.size(0)
         num_transitions = transition_features.size(0)
         
-        # Places -> Transitions
+        # Places -> Transitions : to accumulate messages to each transition
         trans_messages = torch.zeros(num_transitions, self.place_to_trans_msg.out_features, 
                                      device=place_features.device)
         
         if pre_edge_index.size(1) > 0:
+            # the connected places to transitions
             place_idx = pre_edge_index[0]
             trans_idx = pre_edge_index[1]
             messages = self.place_to_trans_msg(place_features[place_idx])
             attention_scores = torch.softmax(self.trans_attention(messages), dim=0)
             weighted_messages = messages * attention_scores
+            # for each transition , all the weighted messages it received are stored in the transition idx
             trans_messages.index_add_(0, trans_idx, weighted_messages)
         
         # Transitions -> Places
@@ -65,6 +74,7 @@ class HeteroGraphConv(nn.Module):
             torch.cat([transition_features, trans_messages], dim=1)
         )
         
+        # relu witha residual connection 
         place_features = F.relu(place_features + place_features_new)
         transition_features = F.relu(transition_features + transition_features_new)
         
@@ -74,7 +84,7 @@ class HeteroGraphConv(nn.Module):
 class SequentialConformanceChecker(nn.Module):
     """
     Sequential conformance checker - examines each transition step-by-step
-    NO CHEATING: Doesn't see the full enablement vector upfront
+    -> NO CHEATING: Doesn't see the full enablement vector upfront 
     """
     
     def __init__(self, hidden_dim: int, num_transitions: int, dropout: float = 0.3):
@@ -86,8 +96,6 @@ class SequentialConformanceChecker(nn.Module):
         # Input: graph context + transition embedding + predicted probability + marking state
         self.step_classifier = nn.Sequential(
             nn.Linear(hidden_dim * 3 + num_transitions + 1, hidden_dim * 2),
-            #         ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^
-            #         graph context         trans one-hot    pred probability
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim * 2, hidden_dim),
@@ -166,6 +174,7 @@ class SequentialConformanceChecker(nn.Module):
         
         for step_idx, trans_idx in enumerate(predicted_indices):
             # Check if this transition is enabled at current marking
+            # each transition is checked incrementaly from current marking
             is_enabled = self.check_transition_enabled(trans_idx, current_marking, pre_edge_index)
             
             # Create input for classifier
@@ -187,6 +196,20 @@ class SequentialConformanceChecker(nn.Module):
             if not is_enabled:
                 step_score = step_score * 0.1  # Heavy penalty for violation
             
+            """
+            here i don't update the current marking for this sequence once a deviation happens 
+            and this doesn't let the model learn that if a deviation happens cascading effects happen
+            or 
+            it is better to just catch only the first deviation in the predicteed sequence and report it 
+            to the system => it can tell where the deviation will start
+
+            the other case : 
+            shows cascading effects: "If this violation happens, what breaks next?
+
+            => we can do another variable for the what if marking
+            """
+
+
             step_scores.append(step_score)
             step_info.append({
                 "transition": trans_idx.item(),
@@ -210,19 +233,21 @@ class SequentialConformanceChecker(nn.Module):
         return conformance, step_info
 
 
+# we want a model that predicts which transitions will fire next in the process graph 
+# and checks if they are valid 
 class ConformanceGNN(nn.Module):
     """
     Two-Stage GNN with Sequential Conformance Checking
     """
     
     def __init__(self, 
-                 place_feature_dim: int = 1,
-                 transition_feature_dim: int = 8,
-                 prefix_encoding_dim: int = 18,
-                 hidden_dim: int = 64,
-                 num_gnn_layers: int = 3,
-                 num_transitions: int = 8,
-                 dropout: float = 0.3):
+                place_feature_dim: int = 1, # token count of a place node
+                transition_feature_dim: int = 8, # one-hot encoding of the transition
+                prefix_encoding_dim: int = 18, # encoding the past sequence as 18 dim embedding
+                hidden_dim: int = 64, 
+                num_gnn_layers: int = 3, # num of messages passing rounds
+                num_transitions: int = 8,
+                dropout: float = 0.3):
         super(ConformanceGNN, self).__init__()
         
         self.num_transitions = num_transitions
@@ -247,7 +272,7 @@ class ConformanceGNN(nn.Module):
         
         # STAGE 1: Transition predictor
         self.transition_predictor = nn.Sequential(
-            nn.Linear(hidden_dim * 3, hidden_dim * 2),
+            nn.Linear(hidden_dim * 3, hidden_dim * 2), # place pooling + transition pooling + prefix encoding
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim * 2, hidden_dim),
@@ -267,14 +292,17 @@ class ConformanceGNN(nn.Module):
         num_transitions = self.num_transitions
         enabled = torch.ones(num_transitions, device=place_features.device)
         
+        # only compute if there are edges connecting places to transitions
         if pre_edge_index.size(1) > 0:
             place_idx = pre_edge_index[0]
             trans_idx = pre_edge_index[1]
-            marking = place_features.squeeze(-1)
+            marking = place_features.squeeze(-1) # count of each place tokens
             
             for t in range(num_transitions):
-                input_places = place_idx[trans_idx == t]
+                input_places = place_idx[trans_idx == t] # for each transition , finds all places that are input for it 
+
                 if len(input_places) > 0:
+                    # a transition can only fire if all required places have > 0 token
                     enabled[t] = torch.all(marking[input_places] > 0).float()
         
         return enabled
@@ -289,7 +317,7 @@ class ConformanceGNN(nn.Module):
         """
         Forward pass with sequential conformance checking
         """
-        # Embed inputs
+        # Embed inputs in hidden dim
         place_features_input = place_features.view(-1, 1)
         place_h = self.place_embedding(place_features_input)
         transition_h = self.transition_embedding(transition_features)
@@ -297,20 +325,22 @@ class ConformanceGNN(nn.Module):
         
         # GNN message passing
         for gnn_layer in self.gnn_layers:
+            # the built gnn layer for message passing returns places and transitions features in hidden dim
             place_h, transition_h = gnn_layer(
                 place_h, transition_h, pre_edge_index, post_edge_index
-            )
+            ) # 3 layers => we get information from 3 hops away
             place_h = self.dropout(place_h)
             transition_h = self.dropout(transition_h)
         
         # Graph-level pooling
+        # mean across all places features => [1, 64]
         place_global = torch.mean(self.place_pooling(place_h), dim=0, keepdim=True)
         transition_global = torch.mean(self.transition_pooling(transition_h), dim=0, keepdim=True)
         combined = torch.cat([place_global, transition_global, prefix_h], dim=1)
         
         # STAGE 1: Predict transitions
         next_transitions_logits = self.transition_predictor(combined).squeeze(0)
-        next_transitions = torch.sigmoid(next_transitions_logits)
+        next_transitions = torch.sigmoid(next_transitions_logits) # probability each transition will fire
         
         # Get current marking for sequential checking
         initial_marking = place_features_input.squeeze(-1)
@@ -324,13 +354,21 @@ class ConformanceGNN(nn.Module):
             post_edge_index
         )
         
-        # Also compute enabled transitions for loss computation
+        # Also compute enabled transitions for loss computation (ground truth)
         enabled_transitions = self.compute_enabled_transitions(
             place_features_input, pre_edge_index
         )
         
         if return_step_info:
             return next_transitions, conformance, enabled_transitions, step_info
+            """Check for violations
+            if conformance < 0.5: Low conformance = violation likely
+                print("WARNING: Non-conformant sequence predicted!")
+                
+                for step in step_info:
+                    if not step['enabled'] and step['predicted_prob'] > 0.5:
+                        print(f"Transition {step['transition']} will likely fire (should not)")
+                        Take preventive action here!"""
         else:
             return next_transitions, conformance, enabled_transitions
 
@@ -341,7 +379,8 @@ class ConformanceLoss(nn.Module):
     def __init__(self, 
                  transition_weight: float = 1.0,
                  conformance_weight: float = 1.0,
-                 enablement_penalty: float = 0.5):
+                 enablement_penalty: float = 0.0 # has to be zero if we want a model to not learn to predict conformant always
+                 ):
         super(ConformanceLoss, self).__init__()
         
         self.transition_weight = transition_weight
@@ -352,10 +391,17 @@ class ConformanceLoss(nn.Module):
                 pred_conformance, true_conformance,
                 enabled_transitions=None):
         
+        # for each transition in the predicted sequence we compare the pedicted probability to the label
+        # then avg across all transitions
+        """
+        pedicted: [0.1, 0.8, 0.05, 0.9, 0.2, 0.6, 0.3, 0.1]
+        True   : [0,   1,   0,    1,   0,   1,   0,   0  ]
+        """
         transition_loss = F.binary_cross_entropy(pred_transitions, true_transitions)
         
         pred_conf = pred_conformance.view(-1)
         true_conf = true_conformance.view(-1)
+        # training valid against non-valid sequence
         conformance_loss = F.binary_cross_entropy(pred_conf, true_conf)
         
         enablement_violation_loss = torch.tensor(0.0, device=pred_transitions.device)
