@@ -3,7 +3,7 @@ Training Script for GNN-based Online Conformance Checking
 
 Key corrections:
 1. Uses the two-stage model architecture
-2. Properly handles enabled transitions in loss computation
+2. handles enabled transitions in loss computation : model learns to predict likely sequence of transitions to fire
 3. Tracks enablement violation metrics
 4. Updated forward pass to handle three outputs instead of two
 """
@@ -83,7 +83,6 @@ class MetricsTracker:
         self.losses = []
         self.transition_losses = []
         self.conformance_losses = []
-        self.enablement_losses = []
     
     def update(self, pred_transitions, true_transitions, 
                pred_conformance, true_conformance, 
@@ -130,7 +129,6 @@ class MetricsTracker:
             'loss': np.mean(self.losses),
             'transition_loss': np.mean(self.transition_losses),
             'conformance_loss': np.mean(self.conformance_losses),
-            'enablement_loss': np.mean(self.enablement_losses),
             'transition_accuracy': trans_accuracy,
             'conformance_accuracy': conf_accuracy,
             'conformance_precision': conf_precision,
