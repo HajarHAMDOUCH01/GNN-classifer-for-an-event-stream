@@ -27,7 +27,7 @@ class HeteroGraphConv(nn.Module):
         self.place_update = nn.Linear(place_dim + hidden_dim, place_dim)
         self.trans_update = nn.Linear(transition_dim + hidden_dim, transition_dim)
 
-        # this layers take a message and output a logit (attn score)
+        # this layers take a message and output a logit (score)
         self.place_attention = nn.Linear(hidden_dim, 1)
         self.trans_attention = nn.Linear(hidden_dim, 1)
     
