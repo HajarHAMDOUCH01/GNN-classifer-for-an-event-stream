@@ -1,5 +1,5 @@
 """
-Training Script for GNN-based Online Conformance Checking - CORRECTED
+Training Script for GNN-based Online Conformance Checking 
 
 Key corrections:
 1. Uses the two-stage model architecture
