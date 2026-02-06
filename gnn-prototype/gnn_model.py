@@ -194,7 +194,13 @@ class SequentialConformanceChecker(nn.Module):
             
             # If not enabled, penalize the score
             if not is_enabled:
-                step_score = step_score * 0.1  # Heavy penalty for violation
+                step_score = step_score * 0.1  # Heavy penalty for violation 
+                # but violations can be too bad or moderate , or in another case for example , 
+                # if many succesive violations happen penalty has to get higher 
+                # Or depending on data , violations paths that happen so model will predict them as likely to happen 
+                # should get higher penalty ; how is does this help ? => from a dataset model will learn fast what violations paths happen more 
+                # it will converge on classifying them as non conformant with a good confidence 
+                # modeling probabilities of paths from data (HMM)
             
             """
             here i don't update the current marking for this sequence once a deviation happens 
@@ -384,7 +390,6 @@ class ConformanceLoss(nn.Module):
         
         self.transition_weight = transition_weight
         self.conformance_weight = conformance_weight
-        # self.enablement_penalty = enablement_penalty
     
     def forward(self, pred_transitions, true_transitions, 
                 pred_conformance, true_conformance,
