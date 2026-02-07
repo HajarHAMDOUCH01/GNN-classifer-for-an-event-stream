@@ -150,7 +150,6 @@ Conceptually similar to:
 
 | Dimension | Status |
 |-----------|--------|
-| Algorithmic novelty | High |
 | Empirical validation | Early |
 | Production readiness | Prototype |
 
