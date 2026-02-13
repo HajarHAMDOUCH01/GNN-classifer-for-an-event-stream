@@ -89,6 +89,8 @@ class SequentialConformanceChecker(nn.Module):
         
         # Per-step conformance classifier
         # Input: graph context + transition embedding + predicted probability + marking state
+
+        # this also needs checking , it can't learn !! check why
         self.step_classifier = nn.Sequential(
             nn.Linear(hidden_dim * 3 + num_transitions + 1, hidden_dim * 2),
             nn.ReLU(),
@@ -189,28 +191,10 @@ class SequentialConformanceChecker(nn.Module):
             
             # If not enabled, penalize the score
             if not is_enabled:
-                step_score = step_score * 0.1  # Heavy penalty for violation 
-                # but violations can be too bad or moderate , or in another case for example , 
-                # if many succesive violations happen penalty has to get higher 
-                # Or depending on data , violations paths that happen so model will predict them as likely to happen 
-                # should get higher penalty ; how is does this help ? => from a dataset model will learn fast what violations paths happen more 
-                # it will converge on classifying them as non conformant with a good confidence 
-                # modeling probabilities of paths from data (HMM)
-            
-            """
-            here i don't update the current marking for this sequence once a deviation happens 
-            and this doesn't let the model learn that if a deviation happens cascading effects happen
-            or 
-            it is better to just catch only the first deviation in the predicteed sequence and report it 
-            to the system => it can tell where the deviation will start
+                step_score = step_score * 0.1  
 
-            the other case : 
-            shows cascading effects: "If this violation happens, what breaks next?
-
-            => we can do another variable for the what if marking
-            """
-
-
+            # TO DOOOOO : think how to estimate a marking for a non-conform transition (wether coming from a conformant state or non-conformant state)
+            # it would likely be the cause of why validation loss is unstable ... !!!
             step_scores.append(step_score)
             step_info.append({
                 "transition": trans_idx.item(),
@@ -218,13 +202,15 @@ class SequentialConformanceChecker(nn.Module):
                 "predicted_prob": predicted_transitions[trans_idx].item(),
                 "conformance_score": step_score.item()
             })
-            
+             
             # Simulate firing if enabled (for next step)
+            ### PROB !
             if is_enabled:
                 current_marking = self.fire_transition(
                     trans_idx, current_marking, pre_edge_index, post_edge_index
                 )
-        
+        # if a transition is non-conformant in the predicted transitions , you should estimate the marking and then start from there
+
         # Aggregate scores (minimum = weakest link)
         if len(step_scores) > 0:
             conformance = torch.stack(step_scores).min().unsqueeze(0)
