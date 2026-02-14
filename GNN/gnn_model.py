@@ -82,7 +82,7 @@ class HeteroGraphConv(nn.Module):
 
 
 class SequentialConformanceChecker(nn.Module):
-    def __init__(self, hidden_dim: int, num_transitions: int, dropout: float = 0.3):
+    def __init__(self, hidden_dim: int, num_transitions: int, dropout: float = 0.1):
         super(SequentialConformanceChecker, self).__init__()
         
         self.num_transitions = num_transitions
@@ -101,8 +101,7 @@ class SequentialConformanceChecker(nn.Module):
             nn.Linear(hidden_dim, 1)  # Conformance score for this step
         )
         
-        # Optional: Learn to aggregate step scores
-        self.aggregator = nn.Linear(1, 1)  # Can be extended to attention-based
+        # self.aggregator = nn.Linear(1, 1)  # Can be extended to attention-based
     
     def check_transition_enabled(self, trans_idx: int, marking: torch.Tensor,
                                  pre_edge_index: torch.Tensor) -> bool:
@@ -195,7 +194,7 @@ class SequentialConformanceChecker(nn.Module):
 
 
             # TO DOOOOO : think how to estimate a marking for a non-conform transition (wether coming from a conformant state or non-conformant state)
-            # do something that will let you estimate the least effort required to go back to a conformant alignement and consider the cose and then continue the transitions next
+            # do something that will let you estimate the least effort required to go back to a conformant alignement and consider the cost and then continue the transitions next
             # only then you can classify
 
 
