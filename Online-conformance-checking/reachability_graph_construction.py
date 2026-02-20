@@ -138,17 +138,19 @@ num_t = len(all_transition_names)
 import torch
 import math
 
-reachability_tensor = torch.zeros((num_t, num_m, num_m))
-angle = math.pi / 2
+def build_reachability_graph_tensor(num_t, num_m, reachability_graph):
+  reachability_tensor = torch.zeros((num_t, num_m, num_m))
+  angle = math.pi / 2
 
-for marking, transitions in reachability_graph.items():
-    src_marking_idx = marking_to_idx[marking]
+  for marking, transitions in reachability_graph.items():
+      src_marking_idx = marking_to_idx[marking]
 
-    for t_name, mode, next_marking in transitions:
-        dst_marking_idx = marking_to_idx[next_marking]
-        t_idx = t_name_to_idx[t_name]
-        
-        reachability_tensor[t_idx, src_marking_idx, dst_marking_idx] = -angle 
-        reachability_tensor[t_idx, dst_marking_idx, src_marking_idx] = angle # to doo : verify that this never happens 
+      for t_name, mode, next_marking in transitions:
+          dst_marking_idx = marking_to_idx[next_marking]
+          t_idx = t_name_to_idx[t_name]
+          
+          reachability_tensor[t_idx, src_marking_idx, dst_marking_idx] = -angle 
+          reachability_tensor[t_idx, dst_marking_idx, src_marking_idx] = angle # to doo : verify that this never happens 
+  return reachability_tensor
 
-# print("\nReachability Tensor :", reachability_tensor)
+reachability_tensor = build_reachability_graph_tensor(num_t=num_t, num_m=num_m, reachability_graph=reachability_graph)
