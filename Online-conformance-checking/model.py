@@ -21,6 +21,7 @@ class PetriNetRotationLayer(nn.Module):
         parameters for the generators of each transition
         an embedding of the transition in the Lie algebra, which will be exponentiated to get the rotation matrix of the rotation between two markings
         """
+        # to do : n'est pas entrainable 
         self.transition_generators = nn.Parameter(torch.randn(num_transitions, self.n_params))
 
         self.W = nn.Linear(num_markings, num_transitions)
@@ -33,7 +34,6 @@ class PetriNetRotationLayer(nn.Module):
         
         return batch_gen - batch_gen.transpose(1, 2)  # make it antisymmetric
 
-    
     def get_rotation_matrix(self, alphas):
         """combines generators weighted by alpha and applies matrix exponential"""
         
