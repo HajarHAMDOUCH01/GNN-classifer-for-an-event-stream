@@ -45,50 +45,6 @@ n.add_output("p2", "t6", Variable("x"))
 n.add_output("p6", "t7", Variable("x"))
 n.add_output("p6", "t8", Variable("x"))
 
-# modes = n.transition("t1").modes()
-# print(f"modes of t1: {modes}")
-# if modes:
-#     n.transition("t1").fire(modes[0])
-
-# print(f"marking after firing t1: {n.get_marking()}")
-# output : 
-# modes of t1: [Substitution(x=0)]
-# marking after firing t1: {p1={0}, p2={0}}
-
-
-# un exemple de process conforme possible
-# tous les process possibles composent reachability graph
-
-# initial_marking = n.get_marking()
-# print("initial marking :", initial_marking)
-
-
-# t = n.transition("t1")
-# modes = t.modes()
-# t.fire(modes.pop())
-# print(f"marking after firing t1: {n.get_marking()}")
-
-# t = n.transition("t2")
-# modes = t.modes()
-# t.fire(modes.pop())
-# print(f"marking after firing t2: {n.get_marking()}")
-
-# t = n.transition("t3")
-# modes = t.modes()
-# t.fire(modes.pop())
-# print(f"marking after firing t3: {n.get_marking()}")
-
-# t = n.transition("t5")
-# modes = t.modes()
-# t.fire(modes.pop())
-# print(f"marking after firing t5: {n.get_marking()}")
-
-
-# t = n.transition("t7")
-# modes = t.modes()
-# t.fire(modes.pop())
-# print(f"marking after firing t7: {n.get_marking()}")
-
 from collections import deque
 
 def build_reachability_graph(net):
@@ -131,3 +87,68 @@ for marking, transitions in reachability_graph.items():
         print(f"  --[{t_name}]--> {next_marking}")
 
 print(f"\nTotal states: {len(reachability_graph)}")
+
+
+"""
+=== Reachability Graph ===
+
+From: {p0={0}}
+  --[t1]--> {p1={0}, p2={0}}
+
+From: {p1={0}, p2={0}}
+  --[t2]--> {p2={0}, p3={0}}
+  --[t3]--> {p1={0}, p4={0}}
+
+From: {p2={0}, p3={0}}
+  --[t3]--> {p3={0}, p4={0}}
+
+From: {p1={0}, p4={0}}
+  --[t2]--> {p3={0}, p4={0}}
+  --[t4]--> {p5={0}}
+
+From: {p3={0}, p4={0}}
+  --[t5]--> {p5={0}}
+
+From: {p5={0}}
+  --[t6]--> {p1={0}, p2={0}}
+  --[t7]--> {p6={0}}
+  --[t8]--> {p6={0}}
+
+From: {p6={0}}
+
+Total states: 7
+"""
+
+all_markings = list(reachability_graph.keys())
+marking_to_idx = {m: i for i, m in enumerate(all_markings)}
+
+all_transition_names = sorted([t.name for t in n.transition()])
+t_name_to_idx = {name: i for i, name in enumerate(all_transition_names)}
+
+num_m = len(all_markings)
+num_t = len(all_transition_names)
+
+# reachability graph as a tensor of shape (Transitions, from_marking, to_marking)
+
+# to doo : 
+# to verify if training : 
+# or between transitions from marking to the next making
+# choosing a transtion each time and how 
+
+import torch
+import math
+
+reachability_tensor = torch.zeros((num_t, num_m, num_m))
+angle = math.pi / 2
+
+for marking, transitions in reachability_graph.items():
+    src_marking_idx = marking_to_idx[marking]
+
+    for t_name, mode, next_marking in transitions:
+        dst_marking_idx = marking_to_idx[next_marking]
+        t_idx = t_name_to_idx[t_name]
+        
+        reachability_tensor[t_idx, src_marking_idx, dst_marking_idx] = angle 
+        reachability_tensor[t_idx, dst_marking_idx, src_marking_idx] = -angle # to doo : verify that this never happens 
+
+print("\nReachability Tensor :", reachability_tensor)
