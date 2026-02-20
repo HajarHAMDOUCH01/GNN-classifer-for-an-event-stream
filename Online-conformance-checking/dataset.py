@@ -72,7 +72,7 @@ def create_split_dataset(graph, all_markings, t_name_to_idx, train_ratio=0.6):
 train_data, test_data = create_split_dataset(reachability_graph, all_markings, t_name_to_idx)
 print(f"Train: {len(train_data)} | Test: {len(test_data)}")
 
-# cet exemple est un cas particulier ; to do : verifie que le modèle comprend l'ordre !!!!
+# cet exemple est un cas particulier ; to do : l'ordre des indexes est insuffisant
 # print("\n========= train dataset ==============")
 # for dataset_element in train_data:
 #     print(f"Source: {all_markings[dataset_element['v_src_idx']]}")

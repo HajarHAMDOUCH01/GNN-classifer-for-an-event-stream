@@ -131,6 +131,7 @@ num_t = len(all_transition_names)
 # reachability graph as a tensor of shape (Transitions, from_marking, to_marking)
 
 # to doo : 
+# edge case : how the model can learn to find an alignement for a trace like : t1, t2, t1, t3, ... , it has to finish the process and start again
 # to verify if training : 
 # or between transitions from marking to the next making
 # choosing a transtion each time and how 
