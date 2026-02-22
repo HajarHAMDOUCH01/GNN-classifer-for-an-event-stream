@@ -1,30 +1,29 @@
 """
-Input v_source : Un marquage quelconque du graphe de joignabilité.
+Input v_source : Un marquage quelconque du reachability graph.
 Input v_target : Un autre marquage atteignable depuis v_source.
 Label (Cible) : Le vecteur alpha idéal qui représente le chemin le plus court.
 """
 from reachability_graph_construction import *
 import heapq
 
-def get_shortest_path_alphas(graph, start_node, end_node, num_transitions, t_name_to_idx):
-    # Dijkstra pour trouver le chemin le plus court des transitions : to do : pense à l'ordre !!
-    # queue: (distance, current_marking, transitions_counts)
-    queue = [(0, start_node, [0] * num_transitions)]
+def get_shortest_path_sequence(graph, start_node, end_node, t_name_to_idx):
+    # queue: (distance, current_marking, sequence_of_indices)
+    queue = [(0, start_node, [])]
     visited = {start_node: 0}
     
     while queue:
-        (dist, current, counts) = heapq.heappop(queue)
+        (dist, current, seq) = heapq.heappop(queue)
         
         if current == end_node:
-            return counts
+            return seq # Retourne par ex: [0, 4, 5] (indices de t1, t5, t6)
         
-        for t_name, mode, next_marking in graph.get(current, []):
-            new_dist = dist + 1
-            if next_marking not in visited or new_dist < visited[next_marking]:
-                visited[next_marking] = new_dist
-                new_counts = list(counts)
-                new_counts[t_name_to_idx[t_name]] += 1
-                heapq.heappush(queue, (new_dist, next_marking, new_counts))
+        if current in graph:
+            for t_name, mode, next_marking in graph[current]:
+                new_dist = dist + 1
+                if next_marking not in visited or new_dist < visited[next_marking]:
+                    visited[next_marking] = new_dist
+                    new_seq = seq + [t_name_to_idx[t_name]]
+                    heapq.heappush(queue, (new_dist, next_marking, new_seq))
     return None
 
 # Génération du Dataset
@@ -41,14 +40,14 @@ def create_split_dataset(graph, all_markings, t_name_to_idx, train_ratio=0.6):
             if m_src == m_tgt: continue
             
             # On récupère le chemin le plus court
-            alphas = get_shortest_path_alphas(graph, m_src, m_tgt, num_t, t_name_to_idx)
+            seq = get_shortest_path_sequence(graph, start_node=m_src, end_node=m_tgt, t_name_to_idx=t_name_to_idx)
             
-            if alphas:
-                length = sum(alphas)
+            if seq:  
+                length = len(seq)
                 data_point = {
                     'v_src_idx': marking_to_idx[m_src],
                     'v_tgt_idx': marking_to_idx[m_tgt],
-                    'alphas': alphas,
+                    'alphas_seq': seq,
                     'length': length
                 }
                 
@@ -72,7 +71,6 @@ def create_split_dataset(graph, all_markings, t_name_to_idx, train_ratio=0.6):
 train_data, test_data = create_split_dataset(reachability_graph, all_markings, t_name_to_idx)
 print(f"Train: {len(train_data)} | Test: {len(test_data)}")
 
-# cet exemple est un cas particulier ; to do : l'ordre des indexes est insuffisant
 # print("\n========= train dataset ==============")
 # for dataset_element in train_data:
 #     print(f"Source: {all_markings[dataset_element['v_src_idx']]}")
@@ -86,24 +84,31 @@ print(f"Train: {len(train_data)} | Test: {len(test_data)}")
 
 
 
-def prepare_tensors(data, num_m, num_t):
-    v_src_list = []
-    v_tgt_list = []
-    alphas_list = []
+def prepare_tensors(data, num_m, num_t, max_steps=5): # to do : remove max steps , but think about batching
+    v_src_list, v_tgt_list, seq_alphas_list = [], [], []
     
     for item in data:
-        # Création des vecteurs One-Hot pour les marquages
-        src = torch.zeros(num_m)
-        src[item['v_src_idx']] = 1.0
+        # 1. Marquages (One-hot)
+        src = torch.zeros(num_m); src[item['v_src_idx']] = 1.0
+        tgt = torch.zeros(num_m); tgt[item['v_tgt_idx']] = 1.0
         
-        tgt = torch.zeros(num_m)
-        tgt[item['v_tgt_idx']] = 1.0
+        # 2. Séquence d'alphas (Matrice [max_steps, num_t])
+        # On crée une matrice vide (zéro)
+        seq_tensor = torch.zeros((max_steps, num_t)) 
+        indices = item['alphas_seq'] # La liste ordonnée [0, 4, 5]
+        
+        for step, t_idx in enumerate(indices):
+            if step < max_steps:
+                seq_tensor[step, t_idx] = 1.0
         
         v_src_list.append(src)
         v_tgt_list.append(tgt)
-        alphas_list.append(torch.tensor(item['alphas'], dtype=torch.float32))
-        
-    return torch.stack(v_src_list), torch.stack(v_tgt_list), torch.stack(alphas_list)
+        seq_alphas_list.append(seq_tensor)
+    # print(f"v_src_list : {v_src_list}")
+    # print(f"v_tgt_list : {v_tgt_list}")
+    # print(f"seq_alphas_list : {seq_alphas_list}")
+
+    return torch.stack(v_src_list), torch.stack(v_tgt_list), torch.stack(seq_alphas_list)
 
 # Conversion
 X_src_train, X_tgt_train, y_alphas_train = prepare_tensors(train_data, num_m, num_t)

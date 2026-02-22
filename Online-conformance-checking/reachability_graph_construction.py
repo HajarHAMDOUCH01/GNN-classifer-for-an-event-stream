@@ -11,7 +11,7 @@ n.add_place(Place("p4", []))
 n.add_place(Place("p5", []))
 n.add_place(Place("p6", []))
 
-# Transitions (sans Expression pour les noms simples)
+# Transitions 
 n.add_transition(Transition("t1"))
 n.add_transition(Transition("t2"))
 n.add_transition(Transition("t3"))
@@ -131,7 +131,7 @@ num_t = len(all_transition_names)
 # reachability graph as a tensor of shape (Transitions, from_marking, to_marking)
 
 # to doo : 
-# edge case : how the model can learn to find an alignement for a trace like : t1, t2, t1, t3, ... , it has to finish the process and start again
+# edge case : if t6 didn't exist how the model can learn to find an alignement for a trace like : t1, t2, t1, t3, ... , it has to finish the process and start again
 # to verify if training : 
 # or between transitions from marking to the next making
 # choosing a transtion each time and how 
@@ -155,3 +155,4 @@ def build_reachability_graph_tensor(num_t, num_m, reachability_graph):
   return reachability_tensor
 
 reachability_tensor = build_reachability_graph_tensor(num_t=num_t, num_m=num_m, reachability_graph=reachability_graph)
+# print(f"reachability tensor : {reachability_tensor}")

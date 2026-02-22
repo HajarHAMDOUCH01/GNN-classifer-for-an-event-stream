@@ -7,64 +7,70 @@ import torch.optim as optim
 
 from reachability_graph_construction import *
 from dataset import *
-# Initialisation
+
 model = PetriNetAlignmentPredictor(reachability_tensor)
 optimizer = optim.Adam(model.parameters(), lr=0.0018)
 
-def training_step(model, v_src, v_tgt, y_true_alphas, lambda_l1=0.05):
+import torch.optim as optim
+import torch 
+import torch.nn.functional as F
+
+# try with batch size = 1 in training and inference : chaque observation de la trace
+
+def training_step(model, v_src, v_tgt, y_true_seq, epoch):
     model.train()
     optimizer.zero_grad()
-    
-    # Forward
-    v_pred, pred_alphas = model(v_src, v_tgt)
-    
-    # 1. Perte de position (Reconstruction)
-    loss_pos = F.mse_loss(v_pred, v_tgt)
-    lambda_l1 = 0.0 if epoch < 1000 else 0.02
-    # 2. Perte de parcimonie (on veut des alphas petits/rares)
-    loss_sparsity = torch.mean(torch.sum(pred_alphas, dim=1))
-    
-    # 3. Optionnel : Perte sur les alphas eux-mêmes (Supervision directe)
-    loss_alpha_direct = F.mse_loss(pred_alphas, y_true_alphas)
-    
-    total_loss = loss_pos + loss_alpha_direct
-    
-    total_loss.backward()
-    optimizer.step()
-    
-    return total_loss.item(), loss_pos.item()
+    train_data_length = len(v_src)
+    for i in range(train_data_length):
+        v_src_element = v_src[i:i+1]
+        v_tgt_element = v_tgt[i:i+1]
+        v_src_element = v_src_element.squeeze(0)
+        v_tgt_element = v_tgt_element.squeeze(0)
+        # v_pred: [Batch, Num_M], pred_seq: [Batch, Steps, Num_T]
+        v_pred, pred_seq = model(v_src_element, v_tgt_element)
+        break
+        
+        loss_alpha = F.mse_loss(pred_seq, y_true_seq)# to do : this should not be mse and loss should not be for total sequence
+        
+        total_loss = loss_alpha
+        
+        total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+        optimizer.step()
+        
+        return total_loss.item()
 
 
-epochs = 5000
+# Boucle d'entraînement
+epochs = 1 
 for epoch in range(epochs):
-    loss, pos_err = training_step(model, X_src_train, X_tgt_train, y_alphas_train)
+    loss = training_step(model, X_src_train, X_tgt_train, y_alphas_train, epoch)
+    
     if epoch % 100 == 0:
-        print(f"Epoch {epoch:3d} | Total Loss: {loss:.6f} | Pos Error: {pos_err:.6f}")
-
-print("\nEntraînement terminé.")
+        print(f"Epoch {epoch:4d} | Loss: {loss:.6f} ")
 
 
 model.eval()
 with torch.no_grad():
-    # On prend le premier exemple du test set
-    # v_src = X_src_test[0:1]
-    # v_tgt = X_tgt_test[0:1]
-    # print(f"marking source : {v_src}")
-    # print(f"marking cible : {v_tgt}")
-    # target_alphas = y_alphas_test[0]
     for i in range(len(X_src_test)):
-        v_src_test_element = X_src_test[i:i+1]
-        v_tgt_test_element = X_tgt_test[i:i+1]
-        y_alphas_test_element = y_alphas_test[i]
-        v_pred, pred_alphas = model(v_src_test_element, v_tgt_test_element)
+        v_src_test = X_src_test[i:i+1]
+        v_tgt_test = X_tgt_test[i:i+1]
         
-        print(f"\n--- Test sur un chemin plus court entre {v_src_test_element} et {v_tgt_test_element}---")
-        formatted_real_alphas = [f"{x:.1f}" for x in y_alphas_test_element.tolist()]
-        print(f"Alphas attendus (Dijkstra) : {formatted_real_alphas}")
-        formatted_pred_alphas = [f"{x:.1f}" for x in pred_alphas.squeeze().tolist()]
-        print(f"Alphas prédits (IA)       : {formatted_pred_alphas}")
+        # v_pred est le résultat de : R_n * ... * R_1 * v_src
+        v_pred, pred_alphas = model(v_src_test, v_tgt_test)
         
-        # On vérifie si le marquage final est le bon
-        print(f"Index du marquage cible : {v_tgt_test_element.argmax().item()}")
-        # print("\nv_pred :\n", v_pred)
-        print(f"Index du marquage prédit: {v_pred.argmax().item()}")
+        print(f"\n--- Test Chemin {i} ---")
+        print(f"source (Index) : {v_src_test.argmax().item()}")
+        print(f"Cible réelle (Index) : {v_tgt_test.argmax().item()}")
+        print(f"Prédit (Index)       : {v_pred.argmax().item()}")
+        
+        if pred_alphas.dim() > 2:
+            for step in range(pred_alphas.size(1)):
+                step_alphas = pred_alphas[0, step]
+                top_t = step_alphas.argmax().item()
+                if step_alphas[top_t] > 0.2:
+                    print(f"  Pas {step+1}: Transition t{top_t+1} (alpha={step_alphas[top_t]:.2f})")
+                break
+        else:
+            print(f"Alphas globaux : {pred_alphas.squeeze().tolist()}")
+        break
