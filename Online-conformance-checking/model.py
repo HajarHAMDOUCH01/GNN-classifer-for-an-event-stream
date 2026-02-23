@@ -1,7 +1,6 @@
 """
-
 Embedding the reachability graph of a Petri net into SO(n) 
-where each marking is an axis of an n-dimensional sphere 
+where each marking is an axis of the n-dimensional sphere 
 and using Lie algebra generators (antisymmetric matrices + matrix exponential) 
 as the transition operators, trained with a 
 neural network to do prefix-alignment for online conformance checking.
