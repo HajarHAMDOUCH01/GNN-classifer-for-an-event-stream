@@ -60,7 +60,11 @@ class PetriNetAlignmentPredictor(nn.Module):
 
             predicted_logits.append(logits)
 
-            if (v_current.argmax(dim=-1).item() == v_tgt_idx) or step == max_steps: # this max steps should be removed , but can it learn from the start , try teacher forcing at the start or somehing
+            if (v_current.argmax(dim=-1).item() == v_tgt_idx): 
+                # print("REACHED !")
+                break
+            elif step == max_steps:
+                print("NOOOO !!!!!")
                 break
 
         full_logits_seq = torch.stack(predicted_logits, dim=1).squeeze(0)  # [L_pred, num_t]
