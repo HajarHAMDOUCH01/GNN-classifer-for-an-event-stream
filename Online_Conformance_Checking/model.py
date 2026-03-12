@@ -1,5 +1,4 @@
 """
-
 Embedding the reachability graph of a Petri net into SO(n) 
 where each marking is an axis of an n-dimensional sphere 
 and using Lie algebra generators (antisymmetric matrices + matrix exponential) 
