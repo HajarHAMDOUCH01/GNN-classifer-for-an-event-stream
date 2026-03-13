@@ -10,8 +10,8 @@ to do :
         because the loss function should check transition by transition and target 
         and whether the same transition fires too many times
         and whether the total firing counts match a valid x satisfying m = m0 + C*x , 
-        but this also doesn't mean the path found is a valid path , 
-        only the other way : a valid pah satisfies the equation 
+        but this also doesn't mean the path found based on a x that satisfies the equation is a valid path , 
+        only the other way : a valid path means there is an x that satisfies the equation 
         but this is trained with cross entropy anyway , but think about something better
  * think about the input of the model for the source and target marking !
  * why do you think you can estimate easily the target marking -> check it's always correct
