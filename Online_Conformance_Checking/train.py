@@ -12,7 +12,7 @@ def training_step(model, X_src_train, X_tgt_train, y_alphas_train, epoch):
     model.train()
     epoch_loss = 0
 
-    tau = max(0.1, 1.0 - epoch * 0.005)  
+    tau = max(0.001, 1.0 - epoch * 0.005)  
 
     for i in range(len(X_src_train)):
         optimizer.zero_grad()
@@ -63,8 +63,8 @@ with torch.no_grad():
         print(f"\n--- Test Chemin {i} ---")
         print(f"Source (Index) : {src_idx}")
         print(f"Cible  (Index) : {tgt_idx}")
-        print(f"Prédit (Index) : {pred_idx}  {'SUCCESS' if pred_idx == tgt_idx else 'FAILED'}")
-
+        cos = F.cosine_similarity(v_pred, v_tgt_test, dim=-1).item()
+        print(f"Prédit cos-sim : {cos:.4f}  {'SUCCESS' if cos >= 0.99 else 'FAILED'}")
         for step in range(pred_logits.size(0)):
             probs = F.softmax(pred_logits[step], dim=-1)
             top_t = probs.argmax().item()

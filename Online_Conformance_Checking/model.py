@@ -43,19 +43,30 @@ class PetriNetAlignmentPredictor(nn.Module):
             x = torch.cat([v_current, v_target], dim=-1)  # [1, num_m*2]
             logits = self.network_step(x)                  # [1, num_t]
 
+            # if training:
+            #     soft_one_hot = F.gumbel_softmax(logits, tau=1.0, hard=False)  # [1, num_t]
+            #     omega_k = torch.einsum('bt,tmk->bmk', soft_one_hot, self.omegas)
             if training:
-                soft_one_hot = F.gumbel_softmax(logits, tau=1.0, hard=False)  # [1, num_t]
-                omega_k = torch.einsum('bt,tmk->bmk', soft_one_hot, self.omegas)
+                if tau <= 0.01: # straight-through estimator phase
+                    hard = logits.argmax(dim=-1)
+                    soft = F.gumbel_softmax(logits, tau=tau, hard=False)
+                    one_hot_hard = torch.zeros_like(soft).scatter_(-1, hard.unsqueeze(-1), 1.0)
+                    ste = one_hot_hard - soft.detach() + soft
+                    omega_k = torch.einsum('bt,tmk-> bmk', ste, self.omegas)
+                else:
+                    soft = F.gumbel_softmax(logits, tau=tau, hard=False)
+                    omega_k = torch.einsum('bt,tmk->bmk', soft, self.omegas)
             else:
                 idx = logits.argmax(dim=-1)
-                omega_k = self.omegas[idx]                 # [1, num_m, num_m]
+                omega_k = self.omegas[idx]    
 
             R_k = torch.matrix_exp(omega_k)
             v_current = torch.bmm(R_k, v_current.unsqueeze(-1)).squeeze(-1)
 
             predicted_logits.append(logits)
 
-            if v_current.argmax(dim=-1).item() == v_tgt_idx:
+            cos_sim = F.cosine_similarity(v_current, v_target, dim=-1).item()
+            if cos_sim >= 0.99:
                 break
 
         full_logits_seq = torch.stack(predicted_logits, dim=1).squeeze(0)  # [L_pred, num_t]

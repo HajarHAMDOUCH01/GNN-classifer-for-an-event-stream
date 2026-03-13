@@ -61,20 +61,28 @@ num_t = len(all_transition_names)
 import torch
 import math
 
-# reachability graph as a tensor of shape (Transitions, from_marking, to_marking)
+# reachability graph as a tensor of shape (Transitions, num_markings, num_markings)
 def build_reachability_graph_tensor(num_t, num_m, reachability_graph):
   reachability_tensor = torch.zeros((num_t, num_m, num_m))
   angle = math.pi / 2
-
+  tansition_used_indices = {t_idx: set() for t_idx in range(num_t)}
   for marking, transitions in reachability_graph.items():
       src_marking_idx = marking_to_idx[marking]
 
       for t_name, mode, next_marking in transitions:
           dst_marking_idx = marking_to_idx[next_marking]
           t_idx = t_name_to_idx[t_name]
+
+          # check even if it ddoesn't happen by definition in the process graph
+          used = tansition_used_indices[t_idx]
+          if src_marking_idx in used or dst_marking_idx in used:
+              print(f"[warning] transition {t_name}: index collision")
+          used.add(src_marking_idx)
+          used.add(dst_marking_idx)
+          # end check
           
           reachability_tensor[t_idx, src_marking_idx, dst_marking_idx] = -angle 
-          reachability_tensor[t_idx, dst_marking_idx, src_marking_idx] = angle # to doo : verify that this never happens 
+          reachability_tensor[t_idx, dst_marking_idx, src_marking_idx] = angle
   return reachability_tensor
 
 reachability_tensor = build_reachability_graph_tensor(num_t=num_t, num_m=num_m, reachability_graph=reachability_graph)
