@@ -1,0 +1,10 @@
+to do : 
+ * edge case : if t6 didn't exist how the model can learn to find an alignement for a trace like : t1, t2, t1, t3, ... , it has to finish the process .. ? 
+ * test with different process graphs from different datasets => done for small graphs
+ * do batching with masking => doesn't work! think of another solution 
+ * fix code -> pytorch things => again , solve the parallelism problem 
+ * think about edge cases 
+ * check if it works without indexing transitions and places !!!
+ * !!!! think how to add the equation for constraining the loss function, this solves the problem of how many times a transition is taken in the sequence
+ * think about the input of the model for the source and target marking !
+ * why do you think you can estimate easily the target marking -> check it's always correct
