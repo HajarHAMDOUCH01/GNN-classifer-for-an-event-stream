@@ -52,14 +52,15 @@ model.eval()
 with torch.no_grad():
     for i in range(len(X_src_test)):
         v_src_test = X_src_test[i:i+1]
+        src_idx  = v_src_test.argmax().item()
         v_tgt_test = X_tgt_test[i:i+1]
         src_marking = all_markings[src_idx]
         if src_marking not in reachability_graph or len(reachability_graph[src_marking]) == 0:
-            print(f"--- Test Chemin {i} --- skip (no outgoing transitions)")
+            print(f"--- Test Chemin {i} --- skipped (no outgoing transitions)")
             continue
         v_pred, pred_logits = model(v_src_test, v_tgt_test, training=False)
 
-        src_idx  = v_src_test.argmax().item()
+        
         tgt_idx  = v_tgt_test.argmax().item()
         pred_idx = v_pred.argmax().item()
 
