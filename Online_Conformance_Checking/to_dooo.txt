@@ -8,3 +8,6 @@ to do :
  * !!!! think how to add the equation for constraining the loss function, this solves the problem of how many times a transition is taken in the sequence
  * think about the input of the model for the source and target marking !
  * why do you think you can estimate easily the target marking -> check it's always correct
+
+
+ * to think about : does it generalize ... , depends on what data to generate , what split to do , put edge cases in graphs -> tests
