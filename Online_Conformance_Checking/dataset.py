@@ -30,9 +30,9 @@ dataset = []
 
 import random
 
-def create_split_dataset(graph, all_markings, t_name_to_idx, train_ratio=0.6):
-    direct_paths = []    # Longueur 1
-    complex_paths = []   # Longueur > 1
+def create_split_dataset(graph, all_markings, t_name_to_idx, train_ratio=0.3):
+    direct_paths = []    # length 1
+    complex_paths = []   # length > 1
     
     for m_src in all_markings:
         for m_tgt in all_markings:
@@ -54,16 +54,33 @@ def create_split_dataset(graph, all_markings, t_name_to_idx, train_ratio=0.6):
                 else:
                     complex_paths.append(data_point)
 
-    # Mélange des chemins complexes
-    random.shuffle(complex_paths)
-    split_idx = int(len(complex_paths) * train_ratio)
-    
-    # Construction des sets
-    # TRAIN : 100% des briques de base + une partie du complexe
-    train_set = direct_paths + complex_paths[:split_idx]
-    # TEST : Uniquement des chemins complexes jamais vus
-    test_set = complex_paths[split_idx:]
-    
+    complex_by_src = {}
+    complex_by_tgt = {}
+    for path in complex_paths:
+        src = path['v_src_idx']
+        tgt = path['v_tgt_idx']
+        complex_by_src.setdefault(src, []).append(path)
+        complex_by_tgt.setdefault(tgt, []).append(path)
+    train_set = list(direct_paths)
+    forced_into_train = set()
+
+    for tgt, paths in complex_by_tgt.items():
+        chosen = paths[0]
+        train_set.append(chosen)
+        forced_into_train.add(id(chosen))
+
+    for src, paths in complex_by_src.items():
+        for path in paths:
+            if id(path) not in forced_into_train:
+                train_set.append(path)
+                forced_into_train.add(id(path))
+                break
+    remaining = [p for p in complex_paths if id(p) not in forced_into_train]
+    random.shuffle(remaining)
+    split = int(len(remaining) * train_ratio)
+    train_set += remaining[:split]
+    test_set = remaining[split:]
+
     return train_set, test_set
 
 train_data, test_data = create_split_dataset(reachability_graph, all_markings, t_name_to_idx)

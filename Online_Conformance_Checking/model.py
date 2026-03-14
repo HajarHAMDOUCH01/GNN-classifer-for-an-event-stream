@@ -1,20 +1,3 @@
-"""
-Embedding the reachability graph of a Petri net into SO(n) 
-where each marking is an axis of an n-dimensional sphere 
-and using Lie algebra generators (antisymmetric matrices + matrix exponential) 
-as the transition operators, trained with a 
-neural network to do prefix-alignment for online conformance checking.
-
-Stream: t1 → t2 → t_nonconformant → ...
-
-1. Track current_marking after each conformant transition
-2. Non-conformant transition t_x arrives
-3. Look up in reachability_graph: "in which marking is t_x enabled?"
-   → that marking is v_tgt
-4. model(v_src=current_marking, v_tgt=found_marking) 
-   → returns the conformant path to get there
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

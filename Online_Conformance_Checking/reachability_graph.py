@@ -101,3 +101,29 @@ for marking, transitions in reachability_graph.items():
             'from_idx': marking_to_idx[marking],
             'to_idx':   marking_to_idx[next_marking]
         })
+
+# C matrix (num_p, num_t)
+place_names = sorted([p.name for p in n.place()])
+place_to_idx = {name: i for i, name in enumerate(place_names)}
+num_p = len(place_names)
+
+marking_vectors = torch.zeros(num_m, num_p)
+for marking, idx in marking_to_idx.items():
+    for p_name in place_names:
+        try:
+            tokens = marking(p_name)   
+            marking_vectors[idx, place_to_idx[p_name]] = len(tokens)
+        except:
+            marking_vectors[idx, place_to_idx[p_name]] = 0
+
+C = torch.zeros(num_p, num_t)
+for marking, transitions in reachability_graph.items():
+    for t_name, mode, next_marking in transitions:
+        t_idx = t_name_to_idx[t_name]
+        src_vec = marking_vectors[marking_to_idx[marking]]
+        dst_vec = marking_vectors[marking_to_idx[next_marking]]
+        col = dst_vec - src_vec  
+        C[:, t_idx] = col         
+
+C = C.detach()
+marking_vectors = marking_vectors.detach()
