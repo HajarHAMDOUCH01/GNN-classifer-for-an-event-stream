@@ -40,8 +40,4 @@ demonstrated.
 ## Next Step
 
 Decouple omegas from the model: pass the reachability tensor as a runtime input.
-Reformulate the model input as graph-invariant scalar features derived from the SO(n)
-geometry — specifically, inner products between candidate next positions and v_tgt —
-enabling a single trained model to navigate any Petri net encoded in this framework
-without retraining. This would constitute zero-shot transfer across process models,
-which is the core scientific claim this architecture is designed to support.
+This would constitute zero-shot transfer across process models.
